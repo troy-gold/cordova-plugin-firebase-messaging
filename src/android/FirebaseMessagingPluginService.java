@@ -19,6 +19,10 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
 
+import java.util.Map;
+
+import io.intercom.android.sdk.push.IntercomPushClient;
+
 import static android.content.ContentResolver.SCHEME_ANDROID_RESOURCE;
 
 
@@ -32,6 +36,8 @@ public class FirebaseMessagingPluginService extends FirebaseMessagingService {
     public final static String NOTIFICATION_ICON_KEY = "com.google.firebase.messaging.default_notification_icon";
     public final static String NOTIFICATION_COLOR_KEY = "com.google.firebase.messaging.default_notification_color";
     public final static String NOTIFICATION_CHANNEL_KEY = "com.google.firebase.messaging.default_notification_channel_id";
+
+    private final IntercomPushClient intercomPushClient = new IntercomPushClient();
 
     private LocalBroadcastManager broadcastManager;
     private NotificationManager notificationManager;
@@ -71,6 +77,14 @@ public class FirebaseMessagingPluginService extends FirebaseMessagingService {
         Intent intent = new Intent(ACTION_FCM_TOKEN);
         intent.putExtra(EXTRA_FCM_TOKEN, token);
         broadcastManager.sendBroadcast(intent);
+
+        // https://developers.intercom.com/installing-intercom/docs/android-fcm-push-notifications#section-step-7-using-intercom-with-other-fcm-setups-optional
+        try {
+            intercomPushClient.sendTokenToIntercom(getApplication(), token);
+            Log.d(TAG, "Intercom received push token.");
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to send push token to Intercom.", e);
+        }
     }
 
     @Override
@@ -81,7 +95,16 @@ public class FirebaseMessagingPluginService extends FirebaseMessagingService {
         intent.putExtra(EXTRA_FCM_MESSAGE, remoteMessage);
         broadcastManager.sendBroadcast(intent);
 
-        if (FirebaseMessagingPlugin.isForceShow()) {
+        Map message = remoteMessage.getData();
+        if (intercomPushClient.isIntercomPush(message)) {
+            // https://developers.intercom.com/installing-intercom/docs/android-fcm-push-notifications#section-step-7-using-intercom-with-other-fcm-setups-optional
+            try {
+                Log.i(TAG, "Intercom consuming push notification data message.");
+                intercomPushClient.handlePush(getApplication(), message);
+            } catch (Exception e) {
+                Log.e(TAG, "Intercom failed to handle push message.", e);
+            }
+        } else if (FirebaseMessagingPlugin.isForceShow()) {
             RemoteMessage.Notification notification = remoteMessage.getNotification();
             if (notification != null) {
                 showAlert(notification);
